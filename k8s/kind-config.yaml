@@ -1,0 +1,16 @@
+# Кластер kind: 1 control-plane и 2 worker. Порт 8081 на вашем компьютере ведёт на Ingress.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: licenses
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - { containerPort: 80, hostPort: 8081, protocol: TCP }
+  - role: worker
+  - role: worker

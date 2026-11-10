@@ -1,0 +1,5 @@
+# Namespace: отдельное "пространство имён", в нём живут все объекты проекта
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: licenses

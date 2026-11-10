@@ -1,0 +1,177 @@
+# Стек для Docker Swarm (8 сервисов). Деплой: docker stack deploy -c swarm/stack.yml lic
+# Переменные берутся из окружения оболочки: REGISTRY, TAG, GATEWAY_PORT (см. scripts/deploy.sh)
+version: "3.8"
+
+x-update: &update
+  update_config:
+    parallelism: 1
+    delay: 10s
+    order: start-first          # сначала поднимается новая реплика, потом гасится старая
+    failure_action: rollback    # если новая не стала healthy, откатываемся сами
+    monitor: 20s
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+  restart_policy:
+    condition: any
+    delay: 5s
+    max_attempts: 0
+
+x-backend-env: &backend-env
+  DB_HOST: postgres
+  DB_NAME: licenses
+  DB_USER: licenses
+  DB_PASSWORD_FILE: /run/secrets/db_password
+  JWT_SECRET_FILE: /run/secrets/jwt_secret
+
+services:
+  gateway:
+    image: ${REGISTRY}/lic-gateway:${TAG}
+    ports:
+      - { target: 8080, published: "${GATEWAY_PORT:-8088}", protocol: tcp, mode: ingress }
+    configs:
+      - { source: monitoring_proxy, target: /etc/nginx/extra/monitoring-proxy.conf, mode: 0444 }
+    networks: [frontend-net, backend-net, monitoring-net]
+    deploy:
+      replicas: 2
+      <<: *update
+      resources: { limits: { memory: 64M, cpus: "0.50" } }
+
+  api:
+    image: ${REGISTRY}/lic-api:${TAG}
+    environment:
+      <<: *backend-env
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+    secrets: [db_password, jwt_secret]
+    networks: [backend-net, db-net, monitoring-net]
+    deploy:
+      replicas: 2
+      <<: *update
+      resources: { limits: { memory: 160M, cpus: "0.50" } }
+
+  auth:
+    image: ${REGISTRY}/lic-auth:${TAG}
+    environment:
+      <<: *backend-env
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets: [db_password, jwt_secret, admin_password]
+    networks: [backend-net, db-net, monitoring-net]
+    deploy:
+      replicas: 2
+      <<: *update
+      resources: { limits: { memory: 128M, cpus: "0.50" } }
+
+  worker:
+    image: ${REGISTRY}/lic-worker:${TAG}
+    environment:
+      <<: *backend-env
+      WORKER_INTERVAL_SECONDS: "60"
+    secrets: [db_password, jwt_secret]
+    networks: [backend-net, db-net]
+    deploy:
+      replicas: 1       # воркер один, иначе уведомления будут создаваться несколькими копиями
+      <<: *update
+      resources: { limits: { memory: 64M, cpus: "0.25" } }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: licenses
+      POSTGRES_USER: licenses
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=40", "-c", "work_mem=2MB"]
+    secrets: [db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U licenses -d licenses"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks: [db-net]
+    deploy:
+      replicas: 1
+      placement: { constraints: ["node.role == manager"] }   # том с данными живёт на одном узле
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 192M, cpus: "0.50" } }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [backend-net]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 48M } }
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/
+    configs:
+      - { source: prometheus_yml, target: /etc/prometheus/prometheus.yml }
+    volumes:
+      - prometheus-data:/prometheus
+    networks: [monitoring-net]
+    deploy:
+      replicas: 1
+      placement: { constraints: ["node.role == manager"] }
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 192M } }
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    secrets: [grafana_password]
+    configs:
+      - { source: grafana_datasource, target: /etc/grafana/provisioning/datasources/prometheus.yml }
+      - { source: grafana_providers, target: /etc/grafana/provisioning/dashboards/dashboards.yml }
+      - { source: grafana_dashboard, target: /var/lib/grafana/dashboards/licenses.json }
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks: [monitoring-net]
+    deploy:
+      replicas: 1
+      placement: { constraints: ["node.role == manager"] }
+      restart_policy: { condition: any, delay: 5s }
+      resources: { limits: { memory: 256M } }
+
+networks:
+  frontend-net: { driver: overlay }
+  backend-net: { driver: overlay, internal: true }
+  db-net: { driver: overlay, internal: true }
+  monitoring-net: { driver: overlay, internal: true }
+
+volumes:
+  pgdata:
+  prometheus-data:
+  grafana-data:
+
+# Секреты создаются заранее командой scripts/create-secrets.sh
+secrets:
+  db_password: { external: true, name: lic_db_password }
+  jwt_secret: { external: true, name: lic_jwt_secret }
+  admin_password: { external: true, name: lic_admin_password }
+  grafana_password: { external: true, name: lic_grafana_password }
+
+# Конфиги берутся из файлов репозитория
+configs:
+  monitoring_proxy: { file: ../gateway/monitoring-proxy.conf }
+  prometheus_yml: { file: ../monitoring/prometheus.swarm.yml }
+  grafana_datasource: { file: ../monitoring/grafana/provisioning/datasources/prometheus.yml }
+  grafana_providers: { file: ../monitoring/grafana/provisioning/dashboards/dashboards.yml }
+  grafana_dashboard: { file: ../monitoring/grafana/dashboards/licenses.json }

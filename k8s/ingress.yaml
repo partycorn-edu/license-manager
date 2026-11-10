@@ -1,0 +1,13 @@
+# Ingress: правила входа снаружи кластера. Нужен установленный ingress-nginx (см. docs/K8S.md).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: licenses
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - { path: /api, pathType: Prefix, backend: { service: { name: api, port: { number: 8000 } } } }
+          - { path: /auth, pathType: Prefix, backend: { service: { name: auth, port: { number: 8000 } } } }
+          - { path: /, pathType: Prefix, backend: { service: { name: gateway, port: { number: 80 } } } }

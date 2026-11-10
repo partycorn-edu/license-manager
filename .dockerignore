@@ -1,0 +1,14 @@
+.git
+.github
+docs
+assets
+k8s
+swarm
+swarm-demo
+scripts
+monitoring
+**/node_modules
+**/dist
+**/__pycache__
+.env
+*.md

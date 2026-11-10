@@ -1,0 +1,14 @@
+# ConfigMap: несекретные настройки. Сервисы получают их как переменные окружения (envFrom)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  DB_HOST: postgres
+  DB_NAME: licenses
+  DB_USER: licenses
+  ADMIN_USERNAME: admin
+  JWT_EXPIRE_MINUTES: "60"
+  REDIS_ENABLED: "false"
+  WORKER_INTERVAL_SECONDS: "60"
+  EXPIRY_WARN_DAYS: "30"

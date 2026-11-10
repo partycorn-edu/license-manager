@@ -1,0 +1,44 @@
+# gateway: nginx со статикой фронтенда. Проксирует /api и /auth по именам Service api и auth.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: lic-gateway
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { memory: 16Mi, cpu: 10m }
+            limits: { memory: 64Mi, cpu: 200m }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101        # пользователь nginx в образе, нужен числом для проверки runAsNonRoot
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector: { app: gateway }
+  ports:
+    - { port: 80, targetPort: 8080 }

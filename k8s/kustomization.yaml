@@ -1,0 +1,25 @@
+# Точка входа: kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: licenses
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - api.yaml
+  - auth.yaml
+  - worker.yaml
+  - gateway.yaml
+  - ingress.yaml
+# Secret создаётся из файла secrets.env, в Git его нет
+secretGenerator:
+  - name: app-secrets
+    envs: [secrets.env]
+generatorOptions:
+  disableNameSuffixHash: true
+# Образы собраны docker compose и загружены в kind командой kind load docker-image
+images:
+  - { name: lic-api, newName: local/lic-api, newTag: local }
+  - { name: lic-auth, newName: local/lic-auth, newTag: local }
+  - { name: lic-worker, newName: local/lic-worker, newTag: local }
+  - { name: lic-gateway, newName: local/lic-gateway, newTag: local }

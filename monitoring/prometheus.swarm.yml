@@ -1,0 +1,15 @@
+# Конфиг для Docker Swarm: tasks.<сервис> возвращает адреса ВСЕХ реплик, а не один виртуальный адрес
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: api
+    dns_sd_configs:
+      - names: ["tasks.api"]
+        type: A
+        port: 8000
+  - job_name: auth
+    dns_sd_configs:
+      - names: ["tasks.auth"]
+        type: A
+        port: 8000

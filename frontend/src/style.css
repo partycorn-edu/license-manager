@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, "Segoe UI", Arial, sans-serif; background: #f4f6f8; color: #1f2933; }
+button { cursor: pointer; font: inherit; }
+.top { display: flex; align-items: center; gap: 24px; padding: 10px 20px; background: #1f3a5f; color: #fff; flex-wrap: wrap; }
+.top nav { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.top nav button { background: transparent; color: #cbd5e1; border: 0; padding: 8px 12px; border-radius: 6px; }
+.top nav button.active, .top nav button:hover { background: #2f5286; color: #fff; }
+.user { font-size: 14px; }
+.link { background: none; border: 0; color: #93c5fd; text-decoration: underline; }
+main { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+h2 { margin: 0 0 14px; }
+.card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat b { display: block; font-size: 28px; }
+.stat span { color: #64748b; font-size: 14px; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e9ee; font-size: 14px; }
+th { background: #eef2f6; }
+.table-wrap { overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 14px; }
+label { display: flex; flex-direction: column; font-size: 13px; color: #475569; gap: 3px; }
+input, select { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; min-width: 150px; }
+.btn { background: #2563eb; color: #fff; border: 0; padding: 8px 14px; border-radius: 6px; }
+.btn.gray { background: #64748b; }
+.btn.red { background: #dc2626; }
+.btn.small { padding: 4px 8px; font-size: 13px; }
+.err { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+.badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #e2e8f0; }
+.badge.ok { background: #dcfce7; color: #166534; }
+.badge.expiring { background: #fef3c7; color: #92400e; }
+.badge.expired, .badge.overused { background: #fee2e2; color: #991b1b; }
+.bar { height: 14px; background: #e2e8f0; border-radius: 7px; overflow: hidden; }
+.bar div { height: 100%; background: #2563eb; }
+.login { max-width: 340px; margin: 12vh auto; }
+.login label { margin-bottom: 12px; }
+.login input { min-width: 0; }
+.muted { color: #64748b; font-size: 13px; }

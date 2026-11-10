@@ -1,0 +1,13 @@
+# Вариант с образами из приватного GHCR. Замените OWNER (строчными) и TAG.
+# Перед применением создайте imagePullSecret (команды в docs/K8S.md).
+# Применять: kubectl apply -k k8s-ghcr/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../k8s
+images:
+  # имена слева это уже подставленные базовым kustomization (local/...)
+  - { name: local/lic-api, newName: ghcr.io/OWNER/lic-api, newTag: TAG }
+  - { name: local/lic-auth, newName: ghcr.io/OWNER/lic-auth, newTag: TAG }
+  - { name: local/lic-worker, newName: ghcr.io/OWNER/lic-worker, newTag: TAG }
+  - { name: local/lic-gateway, newName: ghcr.io/OWNER/lic-gateway, newTag: TAG }

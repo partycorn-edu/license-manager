@@ -1,0 +1,13 @@
+.env
+*.env
+!.env.example
+!secrets.env.example
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.db
+*.zip
+k8s/secrets.env
+report*.md

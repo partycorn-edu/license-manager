@@ -1,0 +1,51 @@
+# Deployment держит нужное число одинаковых подов и обновляет их по очереди (rolling update).
+# Service даёт им одно постоянное имя auth внутри кластера.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # старые поды гасятся только когда новые готовы
+  selector:
+    matchLabels: { app: auth }
+  template:
+    metadata:
+      labels: { app: auth }
+    spec:
+      containers:
+        - name: auth
+          image: lic-auth
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - configMapRef: { name: app-config }
+          env:
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: app-secrets, key: JWT_SECRET } } }
+            - { name: ADMIN_PASSWORD, valueFrom: { secretKeyRef: { name: app-secrets, key: ADMIN_PASSWORD } } }
+          readinessProbe:        # пока проба не прошла, на под не идёт трафик
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:         # если проба падает, под перезапускается
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests: { memory: 64Mi, cpu: 50m }
+            limits: { memory: 192Mi, cpu: 500m }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+spec:
+  selector: { app: auth }
+  ports:
+    - { port: 8000, targetPort: 8000 }

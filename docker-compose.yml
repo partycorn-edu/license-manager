@@ -1,0 +1,151 @@
+# Разработка и локальная демонстрация (8 контейнеров).
+# Запуск: docker compose up -d --build
+name: licenses
+
+x-backend-env: &backend-env
+  DB_HOST: postgres
+  DB_NAME: ${POSTGRES_DB:-licenses}
+  DB_USER: ${POSTGRES_USER:-licenses}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в файле .env}
+  JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в файле .env}
+  JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+
+services:
+  gateway:
+    build: { context: ., dockerfile: gateway/Dockerfile }
+    image: ${REGISTRY:-local}/lic-gateway:${TAG:-local}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./gateway/monitoring-proxy.conf:/etc/nginx/extra/monitoring-proxy.conf:ro
+    depends_on:
+      api: { condition: service_healthy }
+      auth: { condition: service_healthy }
+    networks: [frontend-net, backend-net, monitoring-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 64M } } }
+
+  api:
+    build: { context: ./backend, target: api }
+    image: ${REGISTRY:-local}/lic-api:${TAG:-local}
+    environment:
+      <<: *backend-env
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_URL: redis://redis:6379/0
+      EXPIRY_WARN_DAYS: ${EXPIRY_WARN_DAYS:-30}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend-net, db-net, monitoring-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 160M } } }
+
+  auth:
+    build: { context: ./backend, target: auth }
+    image: ${REGISTRY:-local}/lic-auth:${TAG:-local}
+    environment:
+      <<: *backend-env
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Задайте ADMIN_PASSWORD в файле .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend-net, db-net, monitoring-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 128M } } }
+
+  worker:
+    build: { context: ./backend, target: worker }
+    image: ${REGISTRY:-local}/lic-worker:${TAG:-local}
+    environment:
+      <<: *backend-env
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
+      EXPIRY_WARN_DAYS: ${EXPIRY_WARN_DAYS:-30}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend-net, db-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 64M } } }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-licenses}
+      POSTGRES_USER: ${POSTGRES_USER:-licenses}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в файле .env}
+    # Скромные настройки памяти, чтобы БД помещалась на слабом сервере
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=30", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=16MB"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks: [db-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 192M } } }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [backend-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 48M } } }
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [monitoring-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 192M } } }
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Задайте GRAFANA_ADMIN_PASSWORD в файле .env}
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      prometheus: { condition: service_healthy }
+    networks: [monitoring-net]
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 256M } } }
+
+networks:
+  frontend-net: {}                    # gateway и внешний мир
+  backend-net: { internal: true }     # gateway, api, auth, worker, redis
+  db-net: { internal: true }          # только сервисы с доступом к БД и сама БД
+  monitoring-net: { internal: true }  # Prometheus, Grafana и то, что они опрашивают
+
+volumes:
+  pgdata:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,39 @@
+# Учебный кластер Swarm из 3 узлов внутри Docker Desktop (docker-in-docker).
+# Поднимается скриптом swarm-demo/demo-up.ps1. Это имитация кластера: узлы это контейнеры.
+name: swarmdemo
+services:
+  registry:           # локальный реестр, чтобы узлы забирали собранные образы
+    image: registry:2
+    ports: ["5000:5000"]
+    volumes: [registry-data:/var/lib/registry]
+
+  manager:
+    image: docker:27-dind
+    privileged: true
+    hostname: manager
+    environment: { DOCKER_TLS_CERTDIR: "" }
+    command: ["--insecure-registry=registry:5000"]
+    ports: ["${DEMO_PORT:-8088}:8088"]    # сюда пробрасывается порт приложения
+    volumes: [manager-data:/var/lib/docker]
+
+  worker1:
+    image: docker:27-dind
+    privileged: true
+    hostname: worker1
+    environment: { DOCKER_TLS_CERTDIR: "" }
+    command: ["--insecure-registry=registry:5000"]
+    volumes: [worker1-data:/var/lib/docker]
+
+  worker2:
+    image: docker:27-dind
+    privileged: true
+    hostname: worker2
+    environment: { DOCKER_TLS_CERTDIR: "" }
+    command: ["--insecure-registry=registry:5000"]
+    volumes: [worker2-data:/var/lib/docker]
+
+volumes:
+  registry-data:
+  manager-data:
+  worker1-data:
+  worker2-data:

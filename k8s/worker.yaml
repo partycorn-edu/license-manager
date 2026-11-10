@@ -1,0 +1,32 @@
+# Воркер без Service: на него никто не ходит. Реплика одна, иначе уведомления будут дублироваться.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+    spec:
+      containers:
+        - name: worker
+          image: lic-worker
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: app-config }
+          env:
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } } }
+          livenessProbe:
+            exec: { command: ["python", "-m", "worker.healthcheck"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          resources:
+            requests: { memory: 32Mi, cpu: 20m }
+            limits: { memory: 96Mi, cpu: 200m }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
