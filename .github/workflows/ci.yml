@@ -141,15 +141,21 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  # 4. Деплой на VPS по SSH (только main и только после успешных сборки и smoke-теста)
+  # 4. Деплой по SSH (только main и только после успешных сборки и smoke-теста).
+  # Если секреты VPS (VPS_USER/VPS_HOST/VPS_SSH_KEY/VPS_KNOWN_HOSTS) не заданы,
+  # деплой-джоб репетируется локально на runner'е: там поднимается sshd,
+  # инициализируется Swarm и стек деплоится на него же — ваш VPS не затрагивается.
   deploy:
     needs: [build, smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     concurrency: { group: deploy-vps, cancel-in-progress: false }
     env:
       SSH_OPTS: -i ~/.ssh/deploy_key -p ${{ secrets.VPS_SSH_PORT || 22 }} -o BatchMode=yes -o StrictHostKeyChecking=yes
-      TARGET: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+      TARGET: ${{ (vars.VPS_HOST != '' && vars.VPS_USER != '') && format('{0}@{1}', vars.VPS_USER, vars.VPS_HOST) || 'runner@localhost' }}
     steps:
       - uses: actions/checkout@v4
       - name: Настройка SSH
@@ -158,29 +164,72 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "Секреты VPS не заданы — репетиция деплоя на самом runner'е"
+            ssh-keygen -t ed25519 -f ~/.ssh/deploy_key -N "" -C deploy-rehearsal
+            cat ~/.ssh/deploy_key.pub >> ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq openssh-server >/dev/null
+            if ! pgrep -x sshd >/dev/null 2>&1; then
+              sudo mkdir -p /run/sshd
+              sudo /usr/sbin/sshd
+            fi
+            ssh-keyscan -H localhost > ~/.ssh/known_hosts 2>/dev/null
+            chmod 600 ~/.ssh/known_hosts
+          fi
+      - name: Инициализация Swarm (только для репетиции)
+        if: vars.VPS_HOST == '' || vars.VPS_USER == ''
+        run: |
+          state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
+          if [ "$state" != "active" ]; then docker swarm init; fi
       - name: Копируем файлы стека на сервер
         run: |
           tar czf - swarm scripts monitoring gateway/monitoring-proxy.conf \
             | ssh $SSH_OPTS "$TARGET" 'mkdir -p ~/licenses && tar xzf - -C ~/licenses'
       - name: docker login в GHCR на сервере (токен только на чтение)
+        if: vars.VPS_HOST != '' && vars.VPS_USER != ''
         env:
           GHCR_USER: ${{ secrets.GHCR_READ_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh $SSH_OPTS "$TARGET" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+      - name: docker login в GHCR (репетиция, встроенный токен)
+        if: vars.VPS_HOST == '' || vars.VPS_USER == ''
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Деплой стека
         run: |
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
           TAG="${GITHUB_SHA::7}"
           PORT="${{ vars.VPS_GATEWAY_PORT || '8088' }}"
+          # при репетиции образы качаются с GHCR впервые — даём больше времени
+          EXTRA=""
+          if [ -z "${{ secrets.VPS_USER }}" ]; then EXTRA="DEPLOY_TIMEOUT=900"; fi
           ssh $SSH_OPTS "$TARGET" \
-            "cd ~/licenses && REGISTRY=ghcr.io/$OWNER TAG=$TAG GATEWAY_PORT=$PORT sh ./scripts/deploy.sh"
+            "cd ~/licenses && REGISTRY=ghcr.io/$OWNER TAG=$TAG GATEWAY_PORT=$PORT $EXTRA sh ./scripts/deploy.sh"
+      - name: Проверка портов стека (репетиция)
+        if: success() && (vars.VPS_HOST == '' || vars.VPS_USER == '')
+        run: |
+          echo "Публикуемые порты стека:"
+          docker stack services lic --format '{{.Name}} {{.Ports}}'
+          test -z "$(docker service inspect lic_postgres --format '{{.Endpoint.Ports}}' 2>/dev/null | grep -o 'PublishedPort:[1-9]')" \
+            || { echo "FAIL: postgres опубликован наружу"; exit 1; }
+          echo "OK: postgres не опубликован наружу"
       - name: Чистка старых образов на сервере
         if: success()
         run: ssh $SSH_OPTS "$TARGET" 'docker image prune -f >/dev/null'
+      - name: Очистка репетиции
+        if: always() && (vars.VPS_HOST == '' || vars.VPS_USER == '')
+        run: |
+          docker stack rm lic 2>/dev/null || true
+          sleep 10
+          docker secret ls --format '{{.Name}}' | grep '^lic_' | xargs -r docker secret rm || true
+          docker swarm leave --force 2>/dev/null || true
       - name: Подсказка по откату
         if: failure()
         run: echo "Деплой не прошёл. Откат описан в docs/CICD.md (scripts/rollback.sh)."
