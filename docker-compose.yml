@@ -33,6 +33,7 @@ services:
       REDIS_ENABLED: ${REDIS_ENABLED:-true}
       REDIS_URL: redis://redis:6379/0
       EXPIRY_WARN_DAYS: ${EXPIRY_WARN_DAYS:-30}
+      VIEWER_PASSWORD: ${VIEWER_PASSWORD:?Задайте VIEWER_PASSWORD в файле .env}
     depends_on:
       postgres: { condition: service_healthy }
     networks: [backend-net, db-net, monitoring-net]

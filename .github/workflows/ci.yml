@@ -121,8 +121,15 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/software)" = "401"
           # postgres не должен быть опубликован наружу
           test -z "$(docker compose port postgres 5432 2>/dev/null)"
-          # метрики api видит Prometheus
-          docker compose exec -T prometheus wget -qO- 'http://localhost:9090/api/v1/targets' | grep -q '"health":"up"'
+          # метрики api видит Prometheus (ждём первый успешный scrape, интервал 15с)
+          ok=""
+          for i in $(seq 1 12); do
+            if docker compose exec -T prometheus wget -qO- 'http://localhost:9090/api/v1/targets' | grep -q '"health":"up"'; then
+              ok=1; break
+            fi
+            sleep 5
+          done
+          test -n "$ok" || { docker compose exec -T prometheus wget -qO- 'http://localhost:9090/api/v1/targets' || true; exit 1; }
       - name: Логи при ошибке
         if: failure()
         run: docker compose ps -a && docker compose logs --tail=80

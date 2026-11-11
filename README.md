@@ -62,9 +62,6 @@ docker compose exec api python -m api.seed   # демо-данные
 ![Grafana](assets/grafana.png)
 ![Prometheus](assets/prometheus.png)
 
-Скриншоты Docker, Swarm, Kubernetes, GitHub Actions и Grafana в проект не добавлены, их нужно снять самому.
-Список и команды: [docs/REPORT_MATERIALS.md](docs/REPORT_MATERIALS.md).
-
 ## Документация
 
 | Файл | О чём |

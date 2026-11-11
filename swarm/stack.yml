@@ -43,7 +43,8 @@ services:
       <<: *backend-env
       REDIS_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
-    secrets: [db_password, jwt_secret]
+      VIEWER_PASSWORD_FILE: /run/secrets/viewer_password
+    secrets: [db_password, jwt_secret, viewer_password]
     networks: [backend-net, db-net, monitoring-net]
     deploy:
       replicas: 2
@@ -166,6 +167,7 @@ secrets:
   db_password: { external: true, name: lic_db_password }
   jwt_secret: { external: true, name: lic_jwt_secret }
   admin_password: { external: true, name: lic_admin_password }
+  viewer_password: { external: true, name: lic_viewer_password }
   grafana_password: { external: true, name: lic_grafana_password }
 
 # Конфиги берутся из файлов репозитория

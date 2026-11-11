@@ -24,3 +24,4 @@ make lic_db_password "$(gen)"
 make lic_jwt_secret "$(gen)"
 make lic_admin_password "${ADMIN_PASSWORD:-$(gen)}" show
 make lic_grafana_password "${GRAFANA_ADMIN_PASSWORD:-$(gen)}" show
+make lic_viewer_password "${VIEWER_PASSWORD:-$(gen)}" show
