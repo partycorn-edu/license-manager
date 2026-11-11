@@ -120,7 +120,10 @@ jobs:
           # без токена api должен отвечать 401
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/software)" = "401"
           # postgres не должен быть опубликован наружу
-          test -z "$(docker compose port postgres 5432 2>/dev/null)"
+          # (в новых compose для неопубликованного порта выводится ":0", а не пустая строка)
+          pg_port="$(docker compose port postgres 5432 2>/dev/null || true)"
+          echo "docker compose port postgres: [$pg_port]"
+          test -z "$(echo "$pg_port" | grep -E '.+:[0-9]+')" || { echo "FAIL: postgres опубликован наружу"; exit 1; }
           # метрики api видит Prometheus (ждём первый успешный scrape, интервал 15с)
           ok=""
           for i in $(seq 1 12); do
