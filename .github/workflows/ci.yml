@@ -119,11 +119,12 @@ jobs:
           curl -fsS http://localhost:8080/api/dashboard -H "Authorization: Bearer $TOKEN" | grep -q seats_total
           # без токена api должен отвечать 401
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/software)" = "401"
-          # postgres не должен быть опубликован наружу
-          # (в новых compose для неопубликованного порта выводится ":0", а не пустая строка)
-          pg_port="$(docker compose port postgres 5432 2>/dev/null || true)"
-          echo "docker compose port postgres: [$pg_port]"
-          test -z "$(echo "$pg_port" | grep -E '.+:[0-9]+')" || { echo "FAIL: postgres опубликован наружу"; exit 1; }
+          # postgres не должен быть опубликован наружу.
+          # (docker compose port в свежих версиях печатает "invalid IP:0" для неопубликованного порта,
+          # поэтому проброс проверяем напрямую у контейнера через docker port)
+          pg_port="$(docker port licenses-postgres-1 5432 2>/dev/null || true)"
+          echo "docker port licenses-postgres-1 5432: [$pg_port]"
+          test -z "$pg_port" || { echo "FAIL: postgres опубликован наружу"; exit 1; }
           # метрики api видит Prometheus (ждём первый успешный scrape, интервал 15с)
           ok=""
           for i in $(seq 1 12); do
